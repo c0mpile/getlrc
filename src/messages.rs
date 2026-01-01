@@ -5,6 +5,12 @@ use crate::session::StatusType;
 #[derive(Debug, Clone)]
 pub enum WorkerMessage {
     SessionRestoring,
+    CountsRestored {
+        downloaded: usize,
+        cached: usize,
+        skipped: usize,
+        processed: usize,
+    },
     ScanStarted {
         total_files: usize,
     },

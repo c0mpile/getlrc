@@ -54,6 +54,19 @@ impl AppState {
                 self.status = Status::Restoring;
                 self.paused = true; // Initialize in paused state when restoring
             }
+            WorkerMessage::CountsRestored {
+                downloaded,
+                cached,
+                skipped,
+                processed,
+            } => {
+                // Restore counts from session
+                self.downloaded = downloaded;
+                self.cached = cached;
+                self.skipped = skipped;
+                self.processed = processed;
+                self.found = downloaded; // found = downloaded
+            }
             WorkerMessage::ScanStarted { total_files } => {
                 self.total_files = total_files;
                 self.status = Status::Scanning;
@@ -125,7 +138,7 @@ impl AppState {
                 self.status = Status::Complete;
                 self.current_track = None;
                 self.add_log(format!(
-                    "Scan complete: {}/{} lyrics found",
+                    "Scan complete: {} lyrics downloaded, {} files total",
                     found, processed
                 ));
             }

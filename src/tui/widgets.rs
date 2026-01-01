@@ -11,15 +11,23 @@ pub struct MultiProgress {
     cached: usize,
     skipped: usize,
     total: usize,
+    force_complete: bool,
 }
 
 impl MultiProgress {
-    pub fn new(downloaded: usize, cached: usize, skipped: usize, total: usize) -> Self {
+    pub fn new(
+        downloaded: usize,
+        cached: usize,
+        skipped: usize,
+        total: usize,
+        force_complete: bool,
+    ) -> Self {
         Self {
             downloaded,
             cached,
             skipped,
             total,
+            force_complete,
         }
     }
 
@@ -36,13 +44,30 @@ impl MultiProgress {
             return;
         }
 
-        // Calculate segment widths
-        let downloaded_width = (self.downloaded * bar_width) / self.total.max(1);
-        let cached_width = (self.cached * bar_width) / self.total.max(1);
-        let skipped_width = (self.skipped * bar_width) / self.total.max(1);
-
-        let filled_width = downloaded_width + cached_width + skipped_width;
-        let empty_width = bar_width.saturating_sub(filled_width);
+        // If force_complete, fill the entire bar
+        let (downloaded_width, cached_width, skipped_width, empty_width) = if self.force_complete {
+            // Fill bar proportionally but ensure it reaches 100%
+            let total_processed = self.downloaded + self.cached + self.skipped;
+            if total_processed > 0 {
+                let downloaded_width = (self.downloaded * bar_width) / total_processed;
+                let cached_width = (self.cached * bar_width) / total_processed;
+                let skipped_width = (self.skipped * bar_width) / total_processed;
+                let filled = downloaded_width + cached_width + skipped_width;
+                // Add any remainder to downloaded to ensure full bar
+                let remainder = bar_width.saturating_sub(filled);
+                (downloaded_width + remainder, cached_width, skipped_width, 0)
+            } else {
+                (bar_width, 0, 0, 0)
+            }
+        } else {
+            // Normal calculation
+            let downloaded_width = (self.downloaded * bar_width) / self.total.max(1);
+            let cached_width = (self.cached * bar_width) / self.total.max(1);
+            let skipped_width = (self.skipped * bar_width) / self.total.max(1);
+            let filled_width = downloaded_width + cached_width + skipped_width;
+            let empty_width = bar_width.saturating_sub(filled_width);
+            (downloaded_width, cached_width, skipped_width, empty_width)
+        };
 
         // Build progress bar spans
         let mut spans = Vec::new();

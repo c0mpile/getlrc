@@ -41,6 +41,14 @@ pub async fn run(
             let existing = sess.existing_count;
             let failed = sess.failed_count;
 
+            // Send counts to TUI for progress bar
+            tx.send(WorkerMessage::CountsRestored {
+                downloaded,
+                cached,
+                skipped: existing,
+                processed: downloaded + cached + failed,
+            })?;
+
             // Restore log history
             for entry in &sess.log_history {
                 tx.send(WorkerMessage::LogRestore {
@@ -89,7 +97,8 @@ pub async fn run(
             (files_to_process, 0, 0, existing_count, 0)
         };
 
-    let total_files = files_to_process.len() + existing;
+    // Calculate total files: already processed + existing + pending
+    let total_files = downloaded + cached + failed + existing + files_to_process.len();
     tx.send(WorkerMessage::ScanStarted { total_files })?;
 
     let client = LrcLibClient::new();
@@ -285,11 +294,22 @@ pub async fn run(
     }
 
     let processed = downloaded + cached + failed;
+    let total_files_processed = processed + existing;
+
     tx.send(WorkerMessage::ScanComplete {
-        processed,
+        processed: total_files_processed,
         found: downloaded,
     })?;
-    tracing::info!("Worker complete: {}/{} lyrics found", downloaded, processed);
+
+    tracing::info!(
+        "Worker complete: {} lyrics downloaded, {} total files ({} downloaded, {} cached, {} existing, {} failed)",
+        downloaded,
+        total_files_processed,
+        downloaded,
+        cached,
+        existing,
+        failed
+    );
 
     // Delete session file on successful completion
     if let Err(e) = PersistentSession::delete(&session_path) {

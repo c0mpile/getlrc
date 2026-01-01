@@ -66,9 +66,19 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str) {
 }
 
 fn render_progress(frame: &mut Frame, area: Rect, state: &AppState) {
-    let total = state.total_files + state.skipped;
+    // Force 100% completion if status is Complete
+    let force_complete = state.status == Status::Complete;
 
-    let progress = MultiProgress::new(state.downloaded, state.cached, state.skipped, total);
+    // Total should be exactly what was reported in ScanStarted
+    let total = state.total_files;
+
+    let progress = MultiProgress::new(
+        state.downloaded,
+        state.cached,
+        state.skipped,
+        total,
+        force_complete,
+    );
 
     progress.render(frame, area);
 }
@@ -115,26 +125,31 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" Quit | "),
+        Span::raw(" Quit"),
     ];
 
-    // Add Pause/Resume control based on state
-    if state.paused {
-        spans.push(Span::styled(
-            "r",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(" Resume"));
-    } else {
-        spans.push(Span::styled(
-            "p",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(" Pause"));
+    // Only show Pause/Resume controls if not complete
+    if state.status != Status::Complete {
+        spans.push(Span::raw(" | "));
+
+        // Add Pause/Resume control based on state
+        if state.paused {
+            spans.push(Span::styled(
+                "r",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::raw(" Resume"));
+        } else {
+            spans.push(Span::styled(
+                "p",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::raw(" Pause"));
+        }
     }
 
     let footer = Paragraph::new(Line::from(spans)).block(Block::default().borders(Borders::ALL));
