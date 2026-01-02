@@ -12,8 +12,15 @@ A fast, interactive TUI application for fetching and storing synchronized lyrics
 - 🎨 **Beautiful TUI** - Real-time progress tracking with color-coded status
 - 📁 **XDG Compliant** - Follows Linux standards (`~/.local/share/getlrc/`)
 
-### Interactive Controls
-- ⏸️ **Pause/Resume** - Pause processing at any time, resume later
+### Smart Matching
+- 🧠 **Metadata Normalization** - Cleans track numbers, punctuation, and extra whitespace
+- 🎯 **Fuzzy Matching** - Uses Jaro-Winkler algorithm to match similar titles (>85% similarity)
+- 🔄 **Fallback Search** - Automatically retries with stripped metadata if first attempt fails
+- ✨ **Featuring Artist Handling** - Normalizes "feat.", "ft.", "featuring", "with" variations
+- 📝 **Potential Match Detection** - Logs matches with 60-85% similarity for manual review
+- 🎼 **Version Preservation** - Keeps "Remix", "Live", "Acoustic" info (different lyrics/timing)
+
+### Interactive Controls- ⏸️ **Pause/Resume** - Pause processing at any time, resume later
 - 💾 **Auto-save on Pause** - Session state saved atomically when paused
 - 🔄 **Session Recovery** - Automatically resumes from saved sessions
 - 📊 **Real-time Progress** - Live progress bar with 100% completion guarantee
@@ -382,6 +389,8 @@ getlrc/
 | `walkdir` | Sequential directory traversal (legacy) |
 | `jwalk` | **Parallel directory traversal** |
 | `governor` | **Token-bucket rate limiting** |
+| `regex` | **String normalization and cleaning** |
+| `strsim` | **Fuzzy string matching (Jaro-Winkler)** |
 | `tracing` | Structured logging |
 | `serde` | Serialization |
 | `anyhow` | Error handling |
@@ -405,6 +414,9 @@ getlrc/
 - [x] **Concurrent API worker pool (5 workers) with `governor` rate limiting**
 - [x] **Thread-safe session management with work-stealing queue**
 - [x] **Force retry mode with `--force-retry` flag**
+- [x] **Smart metadata normalization with regex cleaning**
+- [x] **Fuzzy matching using Jaro-Winkler algorithm (>85% auto-accept)**
+- [x] **Automatic fallback search with stripped metadata**
 
 ### 🚧 Next Priority: Error Resilience
 
@@ -495,6 +507,6 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ---
 
-**Current Version**: 0.3.0  
-**Status**: Production Ready (Multi-threaded + Force Retry)  
+**Current Version**: 0.4.0  
+**Status**: Production Ready (Multi-threaded + Fuzzy Matching)  
 **Next Milestone**: Error Resilience (Exponential Backoff)

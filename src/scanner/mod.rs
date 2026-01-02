@@ -1,3 +1,4 @@
+pub mod clean;
 pub mod metadata;
 pub mod parallel;
 

@@ -408,10 +408,11 @@ async fn process_file(
     // Wait for rate limiter
     rate_limiter.until_ready().await;
 
-    // Fetch lyrics
-    match client.get_lyrics(&track).await {
-        Ok(Some(lyrics)) => {
-            // Write .lrc file
+    // Fetch lyrics with smart normalization and fuzzy matching
+    use crate::api::SearchResult;
+    match client.get_lyrics_smart(&track).await {
+        Ok(SearchResult::Found(lyrics)) => {
+            // Exact match found
             if let Some(synced) = lyrics.synced_lyrics {
                 if let Err(e) = write_lrc_file(path, &synced) {
                     tx.send(WorkerMessage::Error {
@@ -465,8 +466,72 @@ async fn process_file(
                     .add_log(filename, StatusType::NotFound);
             }
         }
-        Ok(None) => {
-            // 404 - Add to negative cache
+        Ok(SearchResult::PotentialMatch { lyrics, similarity }) => {
+            // Potential match found (similarity between 0.6 and 0.85)
+            tracing::warn!(
+                "Potential match for {} - {} (similarity: {:.2}). API returned: {} - {}. Manual verification recommended.",
+                track.artist,
+                track.title,
+                similarity,
+                lyrics.artist_name,
+                lyrics.track_name
+            );
+
+            if let Some(synced) = lyrics.synced_lyrics {
+                if let Err(e) = write_lrc_file(path, &synced) {
+                    tx.send(WorkerMessage::Error {
+                        path: path.display().to_string(),
+                        error: e.to_string(),
+                    })?;
+                    *shared_state.failed.lock().await += 1;
+                    shared_state
+                        .session
+                        .lock()
+                        .await
+                        .add_log(filename, StatusType::Error);
+                } else {
+                    tx.send(WorkerMessage::LyricsFound {
+                        path: path.display().to_string(),
+                    })?;
+                    *shared_state.downloaded.lock().await += 1;
+                    shared_state
+                        .session
+                        .lock()
+                        .await
+                        .add_log(filename, StatusType::Downloaded);
+
+                    // If force_retry is enabled and this was in cache, remove it
+                    if shared_state.force_retry {
+                        if let Err(e) = shared_state.cache.lock().await.remove(&sig_hash) {
+                            tracing::warn!(
+                                "Failed to remove {} from negative cache: {}",
+                                path.display(),
+                                e
+                            );
+                        } else {
+                            tracing::info!(
+                                "Force retry success: removed {} from negative cache",
+                                path.display()
+                            );
+                        }
+                    }
+                }
+            } else {
+                // No synced lyrics, add to negative cache
+                shared_state.cache.lock().await.add(&sig_hash)?;
+                tx.send(WorkerMessage::LyricsNotFound {
+                    path: path.display().to_string(),
+                })?;
+                *shared_state.failed.lock().await += 1;
+                shared_state
+                    .session
+                    .lock()
+                    .await
+                    .add_log(filename, StatusType::NotFound);
+            }
+        }
+        Ok(SearchResult::NotFound) => {
+            // All search attempts failed - add to negative cache
             shared_state.cache.lock().await.add(&sig_hash)?;
             tx.send(WorkerMessage::LyricsNotFound {
                 path: path.display().to_string(),
