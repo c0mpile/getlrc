@@ -67,10 +67,14 @@ impl AppState {
                 self.processed = processed;
                 self.found = downloaded; // found = downloaded
             }
+            WorkerMessage::ScanProgress { files_found } => {
+                self.status = Status::Scanning;
+                self.add_log(format!("Scanning... {} files found", files_found));
+            }
             WorkerMessage::ScanStarted { total_files } => {
                 self.total_files = total_files;
-                self.status = Status::Scanning;
-                self.add_log(format!("Scan started: {} files found", total_files));
+                self.status = Status::Processing;
+                self.add_log(format!("Scan complete: {} files to process", total_files));
             }
             WorkerMessage::TrackProcessing { track } => {
                 self.current_track = Some(format!("{} - {}", track.artist, track.title));

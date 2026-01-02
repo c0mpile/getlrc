@@ -1,4 +1,5 @@
 pub mod metadata;
+pub mod parallel;
 
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;

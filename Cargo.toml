@@ -1,6 +1,6 @@
 [package]
 name = "getlrc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Automated lyrics downloader for music libraries using lrclib.net API"
 license = "MIT"
@@ -30,7 +30,11 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Filesystem
 walkdir = "2.5"
+jwalk = "0.8"
 dirs = "5.0"
+
+# Rate limiting
+governor = "0.6"
 
 
 # Logging

@@ -26,6 +26,13 @@ A fast, interactive TUI application for fetching and storing synchronized lyrics
 - 📝 **Comprehensive Logging** - All operations logged to file for debugging
 - 🎯 **100% Progress Accuracy** - Progress bar always reaches completion
 
+### Performance & Scalability
+- ⚡ **Parallel Directory Scanning** - Multi-threaded filesystem traversal with `jwalk`
+- 🔄 **Concurrent Worker Pool** - 5 async workers process files simultaneously
+- 🚦 **Token-Bucket Rate Limiting** - Strict 10 req/s limit using `governor` crate
+- 🔒 **Thread-Safe State** - Work-stealing queue with atomic session updates
+- 📈 **Optimized for Large Libraries** - Handles 40,000+ files efficiently
+
 ## 📦 Installation
 
 ### Using Cargo (Recommended)
@@ -179,13 +186,15 @@ The TUI displays concise status updates for each file:
 
 1. **Environment Verification** - Checks directories and permissions
 2. **Session Check** - Looks for existing session to resume
-3. **Directory Scan** - Recursively finds all audio files
+3. **Parallel Directory Scan** - Multi-threaded traversal finds all audio files using `jwalk`
 4. **Skip Existing** - Ignores files that already have `.lrc` sidecars
-5. **Metadata Extraction** - Reads artist, title, album, duration using `lofty`
-6. **Cache Lookup** - Checks SQLite database for previously unfound tracks
-7. **API Query** - Fetches lyrics from lrclib.net (rate-limited)
-8. **Atomic Write** - Saves synchronized lyrics as `.lrc` files
-9. **Session Update** - Updates session state for resume capability
+5. **Work Queue Population** - Pending files added to thread-safe work-stealing queue
+6. **Worker Pool Spawning** - 5 concurrent async workers start processing
+7. **Metadata Extraction** - Reads artist, title, album, duration using `lofty`
+8. **Cache Lookup** - Checks SQLite database for previously unfound tracks
+9. **Rate-Limited API Query** - Fetches lyrics from lrclib.net (10 req/s via `governor`)
+10. **Atomic Write** - Saves synchronized lyrics as `.lrc` files
+11. **Session Update** - Thread-safe updates to session state for resume capability
 
 ### Architecture
 
@@ -199,18 +208,36 @@ The TUI displays concise status updates for each file:
                     │ mpsc channels (bidirectional)
                     ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   Worker (Tokio)                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐   │
-│  │ Scanner  │→ │  Cache   │→ │ LRCLIB   │→ │  .lrc  │   │
-│  │ (walkdir)│  │ (SQLite) │  │   API    │  │ Writer │   │
-│  └──────────┘  └──────────┘  └──────────┘  └────────┘   │
-│       ↓                                          ↓      │
+│              Worker Pool (Tokio + Arc)                  │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │         Session Persistence (Atomic)             │   │
-│  │  - Pause/Resume state                            │   │
-│  │  - Progress counts                               │   │
-│  │  - Log history (500 entries)                     │   │
+│  │  Parallel Scanner (jwalk)                        │   │
+│  │  - Multi-threaded directory traversal            │   │
 │  └──────────────────────────────────────────────────┘   │
+│                        ↓                                │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Work Queue (Arc<Mutex<VecDeque>>)               │   │
+│  │  - Work-stealing pattern                         │   │
+│  └──────────────────────────────────────────────────┘   │
+│                        ↓                                │
+│  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐   ┌──┐  │
+│  │Worker 1│  │Worker 2│  │Worker 3│  │Worker 4│   │W5│  │
+│  └────┬───┘  └────┬───┘  └────┬───┘  └────┬───┘   └─┬┘  │
+│       │           │           │           │         │   │
+│       └───────────┴───────────┴───────────┴─────────┘   │
+│                        ↓                                │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Governor Rate Limiter (10 req/s)                │   │
+│  └──────────────────────────────────────────────────┘   │
+│                        ↓                                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐   ┌────────┐  │
+│  │  Cache   │→ │ LRCLIB   │→ │  .lrc    │   │Session │  │
+│  │ (SQLite) │  │   API    │  │ Writer   │   │ (Mutex)│  │
+│  └──────────┘  └──────────┘  └──────────┘   └────────┘  │
+│                                                         │
+│  Thread-Safe Shared State (Arc<Mutex>):                 │
+│  - Session persistence (atomic saves)                   │
+│  - Progress counts (downloaded/cached/failed)           │
+│  - Log history (500 entries)                            │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -327,7 +354,9 @@ getlrc/
 | `lofty` | Audio metadata extraction |
 | `rusqlite` | SQLite database |
 | `reqwest` | HTTP client (rustls) |
-| `walkdir` | Directory traversal |
+| `walkdir` | Sequential directory traversal (legacy) |
+| `jwalk` | **Parallel directory traversal** |
+| `governor` | **Token-bucket rate limiting** |
 | `tracing` | Structured logging |
 | `serde` | Serialization |
 | `anyhow` | Error handling |
@@ -347,17 +376,18 @@ getlrc/
 - [x] Environment verification
 - [x] Integrity checks for stale sessions
 - [x] Comprehensive logging
+- [x] **Parallel directory walking with `jwalk`**
+- [x] **Concurrent API worker pool (5 workers) with `governor` rate limiting**
+- [x] **Thread-safe session management with work-stealing queue**
 
-### 🚧 Next Priority: Multi-threaded Scanning
+### 🚧 Next Priority: Error Resilience
 
-- [ ] Parallel directory walking with `rayon` or `jwalk`
-- [ ] Concurrent API worker pool with rate limiting
-- [ ] Async file I/O for metadata extraction
+- [ ] Exponential backoff for API retries
+- [ ] Configurable retry limits
 - [ ] Progress estimation and ETA
 
 ### 🔮 Future Enhancements
 
-- [ ] Exponential backoff for API retries
 - [ ] Configurable API rate limits
 - [ ] Multiple API source support
 - [ ] Lyrics quality scoring
@@ -439,6 +469,6 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ---
 
-**Current Version**: 0.1.0  
-**Status**: Production Ready  
-**Next Milestone**: Multi-threaded Scanning
+**Current Version**: 0.2.0  
+**Status**: Production Ready (Multi-threaded)  
+**Next Milestone**: Error Resilience (Exponential Backoff)

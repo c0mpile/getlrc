@@ -11,6 +11,9 @@ pub enum WorkerMessage {
         skipped: usize,
         processed: usize,
     },
+    ScanProgress {
+        files_found: usize,
+    },
     ScanStarted {
         total_files: usize,
     },
