@@ -22,6 +22,10 @@ pub struct PersistentSession {
 
     /// Buffer of recent TUI log entries to restore visual history
     pub log_history: Vec<LogEntry>,
+
+    /// Force retry flag - bypass negative cache
+    #[serde(default)]
+    pub force_retry: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -41,7 +45,7 @@ pub enum StatusType {
 
 impl PersistentSession {
     /// Create a new session from initial scan
-    pub fn new(root_path: PathBuf, pending_files: Vec<PathBuf>) -> Self {
+    pub fn new(root_path: PathBuf, pending_files: Vec<PathBuf>, force_retry: bool) -> Self {
         Self {
             root_path,
             pending_files,
@@ -50,6 +54,7 @@ impl PersistentSession {
             existing_count: 0,
             failed_count: 0,
             log_history: Vec::new(),
+            force_retry,
         }
     }
 

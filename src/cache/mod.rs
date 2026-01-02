@@ -48,4 +48,16 @@ impl NegativeCache {
 
         Ok(())
     }
+
+    /// Remove a track signature from the negative cache
+    /// Used when a forced retry succeeds
+    pub fn remove(&self, signature: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM negative_cache WHERE signature = ?1",
+            [signature],
+        )?;
+
+        tracing::debug!("Removed signature from negative cache: {}", signature);
+        Ok(())
+    }
 }

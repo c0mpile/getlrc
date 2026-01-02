@@ -22,6 +22,7 @@ struct WorkerPoolState {
     downloaded: Mutex<usize>,
     cached: Mutex<usize>,
     failed: Mutex<usize>,
+    force_retry: bool,
 }
 
 pub async fn run(
@@ -31,14 +32,22 @@ pub async fn run(
     mut ui_rx: mpsc::UnboundedReceiver<UiMessage>,
     session_path: PathBuf,
     mut session: Option<PersistentSession>,
+    force_retry: bool,
 ) -> Result<()> {
     tracing::info!(
-        "Worker pool started for directory: {}",
-        target_dir.display()
+        "Worker pool started for directory: {} (force_retry: {})",
+        target_dir.display(),
+        force_retry
     );
 
     // Track if we're resuming from a session
     let is_resuming = session.is_some();
+
+    // Get force_retry from session or use CLI flag
+    let force_retry = session
+        .as_ref()
+        .map(|s| s.force_retry)
+        .unwrap_or(force_retry);
 
     // Determine if we're resuming or starting fresh
     let (files_to_process, downloaded, cached, existing, failed) = if let Some(ref sess) = session {
@@ -123,6 +132,7 @@ pub async fn run(
         session = Some(PersistentSession::new(
             target_dir.clone(),
             files_to_process.clone(),
+            force_retry,
         ));
 
         (files_to_process, 0, 0, existing_count, 0)
@@ -139,6 +149,7 @@ pub async fn run(
         downloaded: Mutex::new(downloaded),
         cached: Mutex::new(cached),
         failed: Mutex::new(failed),
+        force_retry,
     });
 
     // Create rate limiter (10 requests per second)
@@ -370,18 +381,28 @@ async fn process_file(
     };
     let sig_hash = signature.generate_hash();
 
-    // Check negative cache
-    if shared_state.cache.lock().await.is_cached(&sig_hash)? {
-        tx.send(WorkerMessage::CacheHit {
-            path: path.display().to_string(),
-        })?;
-        *shared_state.cached.lock().await += 1;
-        shared_state
-            .session
-            .lock()
-            .await
-            .add_log(filename, StatusType::Cached);
-        return Ok(());
+    // Check negative cache (bypass if force_retry is enabled)
+    if !shared_state.force_retry {
+        if shared_state.cache.lock().await.is_cached(&sig_hash)? {
+            tx.send(WorkerMessage::CacheHit {
+                path: path.display().to_string(),
+            })?;
+            *shared_state.cached.lock().await += 1;
+            shared_state
+                .session
+                .lock()
+                .await
+                .add_log(filename, StatusType::Cached);
+            return Ok(());
+        }
+    } else {
+        // Force retry mode - check if in cache and log bypass
+        if shared_state.cache.lock().await.is_cached(&sig_hash)? {
+            tracing::info!(
+                "Force retry: bypassing negative cache for {}",
+                path.display()
+            );
+        }
     }
 
     // Wait for rate limiter
@@ -413,6 +434,22 @@ async fn process_file(
                         .lock()
                         .await
                         .add_log(filename, StatusType::Downloaded);
+
+                    // If force_retry is enabled and this was in cache, remove it
+                    if shared_state.force_retry {
+                        if let Err(e) = shared_state.cache.lock().await.remove(&sig_hash) {
+                            tracing::warn!(
+                                "Failed to remove {} from negative cache: {}",
+                                path.display(),
+                                e
+                            );
+                        } else {
+                            tracing::info!(
+                                "Force retry success: removed {} from negative cache",
+                                path.display()
+                            );
+                        }
+                    }
                 }
             } else {
                 // No synced lyrics, add to negative cache

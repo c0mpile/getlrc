@@ -1,6 +1,6 @@
 [package]
 name = "getlrc"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Automated lyrics downloader for music libraries using lrclib.net API"
 license = "MIT"
@@ -18,6 +18,9 @@ tokio = { version = "1.42", features = ["full"] }
 # TUI
 ratatui = "0.29"
 crossterm = "0.28"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
 
 # HTTP client
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }

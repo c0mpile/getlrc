@@ -90,9 +90,33 @@ getlrc ~/Music
 # Scan a specific album
 getlrc ~/Music/Artist/Album
 
+# Force retry: bypass negative cache and retry all files
+getlrc --force-retry ~/Music
+getlrc -f ~/Music
+
 # Show help
 getlrc --help
 ```
+
+### Force Retry Mode
+
+The `--force-retry` (or `-f`) flag bypasses the negative cache and retries fetching lyrics for all files, even those previously marked as "not found":
+
+```bash
+getlrc --force-retry ~/Music
+```
+
+**Behavior:**
+- ✅ **Bypasses Cache**: Ignores negative cache entries and queries the API for every file
+- ✅ **Removes on Success**: If lyrics are found during a forced retry, the file is removed from the negative cache
+- ✅ **Updates on Failure**: If still not found, updates the timestamp in the cache
+- ✅ **Session Persistence**: The flag is preserved when resuming a paused session
+- 📝 **Logged**: All cache bypasses are logged to `~/.local/share/getlrc/logs/getlrc.log`
+
+**Use Cases:**
+- New lyrics were added to lrclib.net since your last scan
+- You want to re-check files that were previously unavailable
+- Testing or debugging cache behavior
 
 ### Interactive Controls
 
@@ -351,6 +375,7 @@ getlrc/
 | `tokio` | Async runtime |
 | `ratatui` | Terminal UI framework |
 | `crossterm` | Terminal control |
+| `clap` | **CLI argument parsing** |
 | `lofty` | Audio metadata extraction |
 | `rusqlite` | SQLite database |
 | `reqwest` | HTTP client (rustls) |
@@ -379,6 +404,7 @@ getlrc/
 - [x] **Parallel directory walking with `jwalk`**
 - [x] **Concurrent API worker pool (5 workers) with `governor` rate limiting**
 - [x] **Thread-safe session management with work-stealing queue**
+- [x] **Force retry mode with `--force-retry` flag**
 
 ### 🚧 Next Priority: Error Resilience
 
@@ -469,6 +495,6 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ---
 
-**Current Version**: 0.2.0  
-**Status**: Production Ready (Multi-threaded)  
+**Current Version**: 0.3.0  
+**Status**: Production Ready (Multi-threaded + Force Retry)  
 **Next Milestone**: Error Resilience (Exponential Backoff)

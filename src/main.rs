@@ -1,56 +1,59 @@
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-fn print_usage(program: &str) {
-    eprintln!("getlrc - Fetch and store lyrics from lrclib.net\n");
-    eprintln!("USAGE:");
-    eprintln!(
-        "    {} <music_directory>    Scan directory for audio files",
-        program
-    );
-    eprintln!(
-        "    {} install              Install to ~/.local/bin",
-        program
-    );
-    eprintln!(
-        "    {} uninstall            Remove from ~/.local/bin",
-        program
-    );
-    eprintln!(
-        "    {} --help               Show this help message",
-        program
-    );
-    eprintln!("\nEXAMPLES:");
-    eprintln!("    {} ~/Music", program);
-    eprintln!("    {} /mnt/media/music", program);
+#[derive(Parser)]
+#[command(name = "getlrc")]
+#[command(about = "Fetch and store lyrics from lrclib.net", long_about = None)]
+#[command(version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Music directory to scan for audio files
+    #[arg(value_name = "DIRECTORY")]
+    directory: Option<PathBuf>,
+
+    /// Force retry: ignore negative cache and retry all files
+    #[arg(short = 'f', long = "force-retry")]
+    force_retry: bool,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Install getlrc to ~/.local/bin
+    Install,
+    /// Uninstall getlrc from ~/.local/bin
+    Uninstall,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Parse CLI arguments first to check for subcommands
-    let args: Vec<String> = std::env::args().collect();
-
-    if args.len() < 2 {
-        print_usage(&args[0]);
-        std::process::exit(1);
-    }
+    let cli = Cli::parse();
 
     // Handle subcommands that don't need logging
-    match args[1].as_str() {
-        "install" => {
+    match cli.command {
+        Some(Commands::Install) => {
             return getlrc::install::install();
         }
-        "uninstall" => {
+        Some(Commands::Uninstall) => {
             return getlrc::install::uninstall();
         }
-        "--help" | "-h" => {
-            print_usage(&args[0]);
-            return Ok(());
+        None => {
+            // Continue to scanner mode
         }
-        _ => {
-            // Continue to scanner mode with file-based logging
-        }
+    }
+
+    // Require directory argument for scanner mode
+    let target_dir = cli.directory.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Missing required argument: DIRECTORY\n\nFor more information, try '--help'."
+        )
+    })?;
+
+    if !target_dir.is_dir() {
+        anyhow::bail!("Path is not a directory: {}", target_dir.display());
     }
 
     // Initialize file-based logging for TUI mode
@@ -70,17 +73,20 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    // Treat argument as directory path
-    let target_dir = PathBuf::from(&args[1]);
-    if !target_dir.is_dir() {
-        anyhow::bail!("Path is not a directory: {}", target_dir.display());
-    }
-
-    run_scanner(target_dir).await
+    run_scanner(target_dir, cli.force_retry).await
 }
 
-async fn run_scanner(target_dir: PathBuf) -> Result<()> {
-    tracing::info!("Starting getlrc for directory: {}", target_dir.display());
+async fn run_scanner(target_dir: PathBuf, force_retry: bool) -> Result<()> {
+    tracing::info!(
+        "Starting getlrc for directory: {} (force_retry: {})",
+        target_dir.display(),
+        force_retry
+    );
+
+    if force_retry {
+        tracing::info!("Force retry enabled: negative cache will be bypassed");
+        println!("🔄 Force retry mode: bypassing negative cache");
+    }
 
     // Verify environment before initializing TUI
     getlrc::env::verify_environment()
@@ -95,11 +101,25 @@ async fn run_scanner(target_dir: PathBuf) -> Result<()> {
     let session_path = getlrc::paths::get_session_path()?;
     let session = if getlrc::session::PersistentSession::exists(&session_path) {
         match getlrc::session::PersistentSession::load(&session_path) {
-            Ok(sess) => {
+            Ok(mut sess) => {
                 // Perform integrity check
                 if sess.check_integrity() {
                     tracing::info!("Session integrity check passed, resuming from previous state");
+
+                    // Update force_retry flag if it changed
+                    if sess.force_retry != force_retry {
+                        tracing::info!(
+                            "Force retry flag changed from {} to {}",
+                            sess.force_retry,
+                            force_retry
+                        );
+                        sess.force_retry = force_retry;
+                    }
+
                     println!("📂 Resuming previous session...");
+                    if force_retry {
+                        println!("🔄 Force retry enabled for resumed session");
+                    }
                     Some(sess)
                 } else {
                     tracing::warn!(
@@ -136,6 +156,7 @@ async fn run_scanner(target_dir: PathBuf) -> Result<()> {
             ui_rx,
             session_path_clone,
             session,
+            force_retry,
         )
         .await
         {
