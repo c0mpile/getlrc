@@ -1,5 +1,6 @@
 pub mod api;
 pub mod cache;
+pub mod env;
 pub mod install;
 pub mod messages;
 pub mod paths;

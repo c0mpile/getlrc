@@ -2,6 +2,14 @@
 name = "getlrc"
 version = "0.1.0"
 edition = "2021"
+description = "Automated lyrics downloader for music libraries using lrclib.net API"
+license = "MIT"
+authors = ["Kevin"]
+repository = "https://github.com/yourusername/getlrc"
+
+[[bin]]
+name = "getlrc"
+path = "src/main.rs"
 
 [dependencies]
 # Async runtime

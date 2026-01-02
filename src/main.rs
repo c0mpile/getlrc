@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -81,6 +81,10 @@ async fn main() -> Result<()> {
 
 async fn run_scanner(target_dir: PathBuf) -> Result<()> {
     tracing::info!("Starting getlrc for directory: {}", target_dir.display());
+
+    // Verify environment before initializing TUI
+    getlrc::env::verify_environment()
+        .context("Failed to verify environment. Check logs for details.")?;
 
     // Initialize negative cache using XDG-compliant paths
     let cache_path = getlrc::paths::get_cache_db_path()?;
