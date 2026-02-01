@@ -82,12 +82,17 @@ impl LrcLibClient {
                 stripped_title
             );
 
+            // For the fallback, also strip the original title for the API query
+            let stripped_original = clean::get_stripped_original_title(&normalized.original_title);
+
             let stripped_normalized = NormalizedMetadata {
                 artist: normalized.artist.clone(),
                 title: stripped_title,
                 album: normalized.album.clone(),
                 original_artist: normalized.original_artist.clone(),
                 original_title: normalized.original_title.clone(),
+                original_album: normalized.original_album.clone(),
+                cleaned_original_title: stripped_original, // Use stripped version for API
             };
 
             match self
@@ -126,12 +131,17 @@ impl LrcLibClient {
         normalized: &NormalizedMetadata,
         duration_secs: u64,
     ) -> Result<SearchResult> {
+        // IMPORTANT: Send cleaned original metadata to API!
+        // - Use original artist (preserves "50 Cent", not "cent")
+        // - Use cleaned title (removes track numbers but keeps remix/featuring info)
+        // - Use original album
+        // This gives the API the best chance to find a match while keeping identifying info
         let url = format!(
             "{}/get?artist_name={}&track_name={}&album_name={}&duration={}",
             LRCLIB_BASE_URL,
-            urlencoding::encode(&normalized.artist),
-            urlencoding::encode(&normalized.title),
-            urlencoding::encode(&normalized.album),
+            urlencoding::encode(&normalized.original_artist),
+            urlencoding::encode(&normalized.cleaned_original_title),
+            urlencoding::encode(&normalized.original_album),
             duration_secs
         );
 
